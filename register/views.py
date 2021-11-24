@@ -228,6 +228,7 @@ def Check(request):
             truecode=People.objects.get(phone=phone).emailcheckcode
             if code == truecode:
                 People.objects.filter(emailcheckcode=code).update(emailcheck=0)
+                print(truecode)
                 status="0"
                 return JsonResponse({"status":status})
         return JsonResponse({"status":status})
