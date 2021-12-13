@@ -10,190 +10,87 @@ from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse, HttpResponse, QueryDict
 from django.contrib import auth
 from django.contrib.sessions.models import Session
-from register.forms import *
-from .forms import RegisterForm
+# from register.forms import *
+import time
+# from .forms import RegisterForm
 from django.core import serializers
 from django.core.mail import EmailMessage, message
+from django.utils import timezone
 import random
+import urllib.parse
 import json
-
-def same_key(body_data):#抓patch和重複欄位用
-    b=[]
-    c=[]
-    d={}
-    data = body_data.decode('utf-8')
-    data2 = data.split('\r\n\r\n')
-    for i in data2:
-        a=i.split('\r\n')
-        for i in a:
-            b=i.split('=')
-            c=c+b
-            for i in range(len(c)):
-                if i%4 == 3:
-                    if c[i-1].replace('"','') in d and  c[i] not in d[c[i-1].replace('"','')]:
-                        a=d[c[i-1].replace('"','')]
-                        d[c[i-1].replace('"','')]=a,c[i]
-                        
-                    else:
-                        d.update({c[i-1].replace('"',''):c[i]})
-                        
-    return d   
-
-def real_pass(request,password):#抓密碼用
-    a=request.COOKIES['sessionid']
-    s=Session.objects.filter(session_key=a)[0]
-    b=s.get_decoded()
-    if password == b['real_password']: 
-        secret_password = b['secret_password']
-    return secret_password
-
-def GetRequestBody(body_data):#patch專用函數
-#body_data = request.body
-    b=[]
-    c=[]
-    d={}
-    data = body_data.decode('utf-8')
-    data2 = data.split('\r\n\r\n')
-    for i in data2:
-        a=i.split('\r\n')
-        for i in a:
-            b=i.split('=')
-            c=c+b
-            for i in range(len(c)):
-                if i%4 == 3:
-                    d.update({c[i-1].replace('"',''):c[i]})
-    return d   
-
-def the24api_dic(id,uid,sharedata,typename):#24api的字典   #放入分享的id和uid,內容,分類
-        #需求 報告內容＋報告者資料＋分享時間＋type 
-        request_dic={'bloodduck':'0','weight':'1','bloodsugar':'2','diet':'3'}#type字典
-        usern=list(invite_code.objects.filter(user_id=uid).values('user_name'))[0]["user_name"]#報告者名字抓資料
-        requester=list(People.objects.filter(username=usern).values())[0]#報告者資料頭
-        crtime=list(record.objects.filter(relation_type='0',type=typename,report_id=id).values('created_at'))#分享時間
-        userDic={ #報告者資料字典
-            "id":uid,"name":usern,"account":requester["username"],"email":requester["email"],
-            "phone":requester["phone"],"fb_id":requester["fb_id"],"status":requester["status"],"group":requester["group"],
-            "birthday":requester["birthday"],"height":requester["height"],"gender":requester["gender"],"verified":requester["verified"]
-            ,"privacy_policy":requester["privacy_policy"],"must_change_password":requester["must_change_password"],
-            "badge":requester["badge"],"created_at":requester["created_at"],"updated_at":requester["updated_at"]
-            }
-        type_dic={"type":request_dic[typename]}
-        sharedata.setdefault("user",userDic)#加上報告者資料
-        sharedata.update(crtime)#加上時間和類別
-        sharedata.update(type_dic)#加上時間和類別
-        return sharedata
-
-def api24(request,kind):
-    if request.method == 'GET':#retype是醫師的
-        bd_list=[]
-        wei_list=[]
-        bs_list=[]
-        diet_list=[]
-        request_dic={'bloodduck':'0','weight':'1','bloodsugar':'2','diet':'3'}
-        req_list=request_dic.keys()
-        for i in req_list:#i=是哪個項目
-            if i == 'bloodduck' and record.objects.filter(relation_type=kind,type=request_dic[i]).exists():
-                id=list(record.objects.filter(relation_type=kind,type=request_dic[i]).values('report_id'))[0]['report_id']
-                for t in range(50):#t是檢測id
-                    if str(t) in id:#id是所有報告的id串列
-                        if bloodduck.objects.filter(id=id).values().exists():
-                            uid=list(bloodduck.objects.filter(id=id).values('user_id'))[0]["user_id"]#報告者uid抓名字
-                            sharedata=list(bloodduck.objects.filter(id=id).values())[0]#報告者內容
-                            bd_list.append(the24api_dic(t,uid,sharedata,i))#丟進去裡面將字典連接起來
-            elif i == 'weight' and record.objects.filter(relation_type=kind,type=request_dic[i]).exists():
-                id=list(record.objects.filter(relation_type=kind,type=request_dic[i]).values('report_id'))[0]['report_id']#1 2 3
-                for t in range(50):#t是檢測id
-                    if str(t) in id:#id是所有報告的id串列
-                        if weight.objects.filter(id=id).values().exists():
-                            uid=list(weight.objects.filter(id=id).values('user_id'))[0]["user_id"]#報告者uid抓名字
-                            sharedata=list(weight.objects.filter(id=id).values())[0]#報告者內容
-                            wei_list.append(the24api_dic(t,uid,sharedata,i))#丟進去裡面將字典連接起來
-            elif i == 'bloodsugar'and record.objects.filter(relation_type=kind,type=request_dic[i]).exists():
-                id=list(record.objects.filter(relation_type=kind,type=request_dic[i]).values('report_id'))[0]['report_id']#1 2 3
-                for t in range(50):#t是檢測id
-                    if str(t) in id:#id是所有報告的id串列
-                        if bloodsugar.objects.filter(id=id).values().exists():
-                            uid=list(bloodsugar.objects.filter(id=id).values('user_id'))[0]["user_id"]#報告者uid抓名字
-                            sharedata=list(bloodsugar.objects.filter(id=id).values())[0]#報告者內容
-                            bs_list.append(the24api_dic(t,uid,sharedata,i))#丟進去裡面將字典連接起來
-            elif i == 'diet'and record.objects.filter(relation_type=kind,type=request_dic[i]).exists():
-                id=list(record.objects.filter(relation_type=kind,type=request_dic[i]).values('report_id'))[0]['report_id']#1 2 3
-                for t in range(50):#t是檢測id
-                    if str(t) in id:#id是所有報告的id串列
-                        if diet.objects.filter(id=id).values().exists():
-                            uid=list(diet.objects.filter(id=id).values('user_id'))[0]["user_id"]#報告者uid抓名字
-                            sharedata=list(diet.objects.filter(id=id).values())[0]#報告者內容
-                            diet_list.append(the24api_dic(t,uid,sharedata,i))#丟進去裡面將字典連接起來
-        status="0"
-        all_list=bd_list+wei_list+bs_list+diet_list
-        return all_list
-    else:
-        status = "1"
-        return status
-
-
+import re
 
 
 #第一個ＡＰＩ 註冊 post
 @csrf_exempt
 def Register(request):  
-    status = "11"
+    status = "1"
     if request.method == 'POST':
-        print(111)
-        f = RegisterForm(request.POST)
-        if f.is_valid():
-            username=f.cleaned_data['account']
-            phone=f.cleaned_data['phone']
-            email=f.cleaned_data['email']
-            password= f.cleaned_data['password']
-            print(password)
-            People.objects.create_user(username=username,phone=phone,email=email,password=password)
-            c=People.objects.filter(username=username).values('password').get()
-            # 確定uid是註冊時獲取的資料就創預設資料
-            # uid=request.user.id
-            # default.objects.create(user_id=uid)
-            # medical.objects.create(user_id=uid)
-            # setting.objects.create(user_id=uid)
-            secret=c['password']
-            request.session['secret_password']=secret
-            request.session['real_password']=password
-            status = "0"
-            return JsonResponse({"status":status})
+        a=request.body
+        ur=urllib.parse.unquote(str(a, encoding='utf-8'))
+        a = re.split("=|&",ur)
+        udata={}
+        for i in range(0,int(len(a)),2):
+            b=i+1    
+            udata[a[i]]=a[b]
+        user=People.objects.create_user(username=udata['account'],email=udata['email'])
+        password=udata['password']
+        user.set_password(password)
+        user.save()
+        t=time.time()
+        turn_t = time.localtime(t) # 轉成時間元組
+        dat_time = time.strftime("%Y-%m-%d %H:%M:%S", turn_t)
+        code=random.randint(100,999)
+        b=udata['account']
+        invite_code.objects.create(user_name=b,code=code)
+        UserSet.objects.create(account=udata['account'],name=udata['account'],privacy_policy=0,login_times=0,created_at=dat_time,updated_at=dat_time)
+        default.objects.create(account=udata['account'],created_at=dat_time,updated_at=dat_time)
+            # # People.objects.create_user(username=username,phone=phone,email=email,password=password)
+            # c=People.objects.filter(username=username).values('password').get()
+            # # #確定uid是註冊時獲取的資料就創預設資料
+            # # uid=request.user.id
+            # # default.objects.create(user_id=uid)
+            # # medical.objects.create(user_id=uid)
+            # # setting.objects.create(user_id=uid)
+            # secret=c['password']
+            # request.session['secret_password']=secret
+            # request.session['real_password']=password
+        status = "0"
+        print(status)
+        return JsonResponse({"status":status})
     else:
-        print(123123)
         status = "1"
     return JsonResponse({"status":status})
 #第二個ＡＰＩ 登入 post
 @csrf_exempt
 def Login(request):
-    if request.user.is_authenticated:
-        status = "1"
-        return JsonResponse({"status":status})    
-    elif request.method == 'POST':
+    if request.method == 'POST':
         username = request.POST['account']
         password = request.POST['password']
-        fb_id=request.POST['fb_id']
-        print(username, password)
-        user = auth.authenticate(username=username,password=password)
-        if People.objects.filter(username=username,emailcheck=0).exists() is not True :
-            status='2'
-            return JsonResponse({"status":status})
-        elif fb_id is not "0":
-            status="3"
+        print("dd")
+        if emailcheck.objects.filter(email=username,didemailcheck=0).exists() is not True :
+            print('email問題')
+            status='1'
             return JsonResponse({"status":status})
         else:
+            user = auth.authenticate(username=username,password=password)
             if user:
+                print('jj')
                 auth.login(request,user)
-                s=Session.objects.all()[0]
-                request.session['username']=username
-                token = s.session_data
                 status="0"
+                uid=request.user.id
+                UserSet.objects.filter(account=username).update(user_id=uid)
+                default.objects.filter(account=username).update(user_id=uid)
+                invite_code.objects.filter(user_name=username).update(user_id=uid)
                 return JsonResponse({"status":status})
             else:
+                print('登不進去問題')
                 status = "1"
         return JsonResponse({"status":status})
     else:
         status = "1"
+        print(status)
         return JsonResponse({"status":status})
 
 
@@ -202,35 +99,46 @@ def Login(request):
 @csrf_exempt
 def Send(request):
     if request.method == 'POST':
-        phone = request.POST['phone']
-        emailaddress = request.POST['email']
-        if People.objects.filter(phone=phone,email=emailaddress).exists():
-            randomcheck=random.randint(100,999)
-            email = EmailMessage(body=str(randomcheck),  # 電子郵件內容
-                to=[emailaddress]  # 收件者
-            )
-            email.fail_silently = False
-            email.send()
-            People.objects.filter(phone=phone).update(emailcheckcode=randomcheck)
-            status = "0"
-            return JsonResponse({"status":status})
+        a=request.body
+        ur=urllib.parse.unquote(str(a, encoding='utf-8'))
+        a = re.split("=|&",ur)
+        udata={}
+        for i in range(0,int(len(a)),2):
+            b=i+1    
+            udata[a[i]]=a[b]
+        emailaddress=udata['email']
+        randomcheck=random.randint(100,999)
+        email = EmailMessage(str(randomcheck),body="\n".join([
+            "請訪問該連結，完成使用者驗證:","/".join(['192.168.1.241:8000/api/check',str(randomcheck)])]),  # 電子郵件內容
+            to=[emailaddress]  # 收件者
+        )
+        email.fail_silently = False
+        # email.send()
+        if emailcheck.objects.filter(email=emailaddress).exists():
+            emailcheck.objects.filter(email=emailaddress).update(emailcheckcode=randomcheck)
+        else:
+            emailcheck.objects.create(email=emailaddress,emailcheckcode=randomcheck)
+        status = "0"
+        return JsonResponse({"status":status})
     else:
         status = "1"
         return JsonResponse({"status":status})
 
 @csrf_exempt#第四個ＡＰＩ 確認驗證碼
-def Check(request):
+def Check(request,chcode):
     if request.method == 'POST':
-        phone = request.POST['phone']
-        code = request.POST['code']
         status = "1"
-        if People.objects.filter(phone=phone).exists():
-            truecode=People.objects.get(phone=phone).emailcheckcode
-            if code == truecode:
-                People.objects.filter(emailcheckcode=code).update(emailcheck=0)
-                print(truecode)
-                status="0"
-                return JsonResponse({"status":status})
+        a=request.body
+        ur=urllib.parse.unquote(str(a, encoding='utf-8'))
+        a = re.split("=|&",ur)
+        udata={}
+        for i in range(len(a)/2):
+            udata[a[i]]=a[i*2]
+        if emailcheck.objects.filter(emailcheckcode=chcode).exists():
+            # emailcheck.objects.filter(emailcheckcode=chcode).update(emailcheck=0)
+            print("gj")
+            status="0"
+            return JsonResponse({"status":status})
         return JsonResponse({"status":status})
     else:
         status = "1"
@@ -250,10 +158,6 @@ def Forget(request):
             email.fail_silently = False
             email.send()
             status = "0"
-            print(request.user.id)
-            # uid=request.user.id
-            # default.objects.create(user_id=uid)
-            # setting.objects.create(user_id=uid)
             return JsonResponse({"status":status})
     else:
         status = "1"
@@ -263,10 +167,9 @@ def Forget(request):
 def Reset(request):
     if request.method == 'POST':
         password = request.POST['password']
-        token = request.POST['token']
         status = "1"
-        if People.objects.filter(token=token).exists():
-            People.objects.filter(token=token).update(password=password)
+        if People.objects.filter(password="aaa").exists():
+            People.objects.filter(token="aaa").update(password=password)
             status = "0"
             return JsonResponse({"status":status})
         else:
@@ -279,21 +182,23 @@ def Reset(request):
 def Userinfo(request):
     if request.method == 'GET':  #第12
         uid=request.user.id
+        print(uid)
         userdata = People.objects.values()
         user_dic=list(userdata)[0]
         user_defa=default.objects.filter(user_id=uid).values()
         user_defa_dic=list(user_defa)[0]
-        user_setting=setting.objects.filter(user_id=uid).values()
+        user_setting=UserSet.objects.filter(user_id=uid).values()
         user_setting_dic=list(user_setting)[0]
         all_dic={
-            'id':uid,'name':user_dic['name'],'account':user_dic['username'],'email':user_dic['email'],
-            'phone':user_dic['phone'],'fb_id':user_dic['fb_id'],'status':user_dic['status'],
-            'group':user_dic['group'],'birthday':user_dic['birthday'],'height':user_dic['height'],
-            'weight':user_dic['Weight'],'gender':user_dic['gender'],'address':user_dic['address'],
-            'unread_records':user_dic['unread_records'],'verified':user_dic['verified'],
-            'privacy_policy':user_dic['privacy_policy'],'must_change_password':user_dic['must_change_password'],
-            'fcm_id':user_dic['fcm_id'],'badge':user_dic['badge'],'login_times':user_dic['login_times'],
-            'created_at':user_dic['created_at'],'updated_at':user_dic['updated_at'],'default':user_defa_dic,'setting':user_setting_dic
+            'id':uid,'name':user_setting_dic['name'],'account':user_dic['username'],'email':user_dic['email'],
+            'phone':user_dic['phone'],'fb_id':user_setting_dic['fb_id'],'status':user_setting_dic['status'],
+            'group':user_setting_dic['group'],'birthday':user_setting_dic['birthday'],'height':user_setting_dic['height'],
+            'weight':user_setting_dic['Weight'],'gender':user_setting_dic['gender'],'address':user_setting_dic['address'],
+            'unread_records':[user_setting_dic['unread_records_one'],user_setting_dic['unread_records_two'],user_setting_dic['unread_records_three']],
+            'verified':user_setting_dic['verified'],'privacy_policy':user_setting_dic['privacy_policy'],
+            'must_change_password':user_setting_dic['must_change_password'],'fcm_id':user_setting_dic['fcm_id'],
+            'badge':user_setting_dic['badge'],'login_times':user_setting_dic['login_times'],'created_at':user_setting_dic['created_at'],
+            'updated_at':user_setting_dic['updated_at'],'default':user_defa_dic,'setting':user_setting_dic
         }
         if user_dic is None:
             status="1"
@@ -303,7 +208,6 @@ def Userinfo(request):
             return JsonResponse({"status":status,'user':all_dic})
     elif request.method == 'PATCH':#第7
         d=GetRequestBody(request.body)
-        print(d)
         dkey=list(d)
         if 'token' in dkey:
             People.objects.update(token=d['token'])
@@ -370,10 +274,11 @@ def Bloodsugar(request):
     if request.method == 'POST':
         uid=request.user.id
         sugar = request.POST['sugar']
-        time_period = request.POST['time_period']
+        # time_period = request.POST['time_period']
+        # print(time_period)
         recorded_at = request.POST['recorded_at']
         status = "1"
-        bloodsugar.objects.create(user_id=uid,sugar=sugar,time_period=time_period,recorded_at=recorded_at)
+        bloodsugar.objects.create(user_id=uid,sugar=sugar,recorded_at=recorded_at)
         if bloodsugar.objects.exists():
             status = "0"
             return JsonResponse({"status":status})
@@ -441,17 +346,22 @@ def Diary(request):
 def Diet(request):
     if request.method == 'POST':
         uid=request.user.id
-        d=same_key(request.body)
-        tag=list(d['tag'])
-        description = request.POST['description']
-        meal = request.POST['meal']
-        image = request.POST['image']
-        lat = request.POST['lat']
-        lng = request.POST['lng']
-        location={"lat":lat.replace('"',''),"lng":lng.replace('"','')}
-        recorded_at = request.POST['recorded_at']
-        diet.objects.create(user_id=uid,description=description,meal=meal,tag=tag,image=image,location=location,
-        recorded_at=recorded_at
+        a=request.body
+        ur=urllib.parse.unquote(str(a, encoding='utf-8'))
+        a = re.split("=|&",ur)
+        udata={}
+        for i in range(0,int(len(a)),2):
+            b=i+1    
+            udata[a[i]]=a[b]
+        tag = request.POST.getlist("tag[][]")
+        description = udata['description']
+        meal = udata['meal']
+        image = udata['image']
+        lat = udata['lat']
+        lng = udata['lng']
+        recorded_at = udata['recorded_at']
+        diet.objects.create(user_id=uid,description=description,meal=meal,
+        tag=tag,image=image,recorded_at=recorded_at
         )
         status="0"
         return JsonResponse({"status":status})
@@ -461,15 +371,10 @@ def Diet(request):
 
 @csrf_exempt#第十六個ＡＰＩ 獲取控糖團邀請碼 有問題 有關預設驗證碼和uid
 def Friendcode(request):
-    print('11')
     if request.method == 'GET':
         uid=request.user.id
         status="0"
-        # a=People.objects.values('username')
-        # b=list(a)[0]['username']
-        b='abcd12345'
-        code='abcdefg'
-        invite_code.objects.create(user_id=uid,user_name=b,code=code)
+        code=invite_code.objects.get(user_id=uid).code
         return JsonResponse({"status":status,'invite_code':code})
     else:
         status = "1"
@@ -479,14 +384,42 @@ def Friendcode(request):
 def Friendlist(request):
     if request.method == 'GET':
         uid=request.user.id
-        friend_list_data=[]
-        friendlist_id=list(uid_id_friend.objects.filter(my_id=uid).values('friend_id'))
-        for i in range(len(friendlist_id)):
-            friendlist_id[i]=friendlist_id[i]['friend_id']
-            fl_dic=list(friendlist.objects.filter(id=friendlist_id[i]).values())[0]
-            friend_list_data.append(fl_dic)
+        print(request.body)
+        friend_list=list(friendlist.objects.filter(user_id=uid).values())[0]
+        friend_list['created_at']=time_cut(friend_list['created_at'])
+        friend_list['updated_at']=time_cut(friend_list['updated_at'])
+        friend_list.pop('user_id')
+        # friendlist_id=list(uid_id_friend.objects.filter(friend_id=uid).values('my_id'))
+        # friendlist_rt=list(uid_id_friend.objects.filter(friend_id=uid).values('relation_type'))
+        # print(friendlist_rt)
+        # for i in range(len(friendlist_id)):
+        #     friendlist_id[i]=friendlist_id[i]['my_id']
+        #     fl_dic=list(UserSet.objects.filter(user_id=friendlist_id[i]).values(
+        #     'id','name','account','fb_id','status','group','birthday','height','gender','verified',
+        #     'privacy_policy','must_change_password','badge','created_at','updated_at'
+        #     ))[0]
+        #     people=list(People.objects.filter(username=fl_dic['account']).values("email","phone"))[0]
+        #     a=friendlist_rt[i]['relation_type']
+        #     b=fl_dic['created_at']
+        #     print(type(fl_dic))
+        #     bb=b.strftime("%Y-%m-%d %H:%M:%S")
+        #     c=fl_dic['updated_at']
+        #     cc=c.strftime("%Y-%m-%d %H:%M:%S")
+        #     all_dic={
+        #         'id':fl_dic['id'],'name':fl_dic['name'],'account':fl_dic['account'],'email':people['email'],
+        #         'phone':people['phone'],'fb_id':fl_dic['fb_id'],'status':fl_dic['status'],'group':"男",
+        #         'birthday':fl_dic['birthday'],'height':fl_dic['height'],'gender':fl_dic['gender'],'verified':fl_dic['verified'],
+        #         'privacy_policy':fl_dic['privacy_policy'],'must_change_password':"0",
+        #         'badge':"0",'created_at':bb,'updated_at':cc,
+        #         'relation_type':a
+        #         }
+        #     friend_list_data.append(all_dic)
+        # print(friend_list_data)
+        a=[]
+        a.append(friend_list)
+        print(a)
         status="0"
-        return JsonResponse({"status":status,"friends":friend_list_data})
+        return JsonResponse({"status":status,"friends":a})
     else:
         status = "1"
         return JsonResponse({"status":status})
@@ -495,24 +428,31 @@ def Friendlist(request):
 def Friendrequest(request):
     if request.method == 'GET':
         uid=request.user.id
-        if requestlist.objects.filter(whoami=uid).exist():
+        print(request.body)
+        if requestlist.objects.filter(whoami=uid,status=0):
             re=requestlist.objects.filter(whoami=uid).values()
             re_dic=list(re)[0]
-            requester=list(People.objects.filter(username=re_dic["user_id"]).values())[0]
-            all_dic={
-                "id":re_dic["id"],"user_id":re_dic["user_id"],"type":re_dic["type"],"status":re_dic["status"],
-            "created_at":re_dic["created_at"],"updated_at":re_dic["updated_at"],
+            rlc=time_cut(re_dic['created_at'])
+            rlu=time_cut(re_dic['updated_at'])
+            requester=list(UserSet.objects.filter(user_id=re_dic["user_id"]).values())[0]
+            perform=list(People.objects.filter(username=requester["account"]).values())[0]
+            rcreated_at=time_cut(requester["created_at"])#1
+            rupdated_at=time_cut(requester["updated_at"])
+            all_dic=[{
+                "id":re_dic["id"],"user_id":re_dic["user_id"],"relation_id":re_dic['relation_id'],"type":re_dic["type"],"status":re_dic["status"],
+            "created_at":rlc,"updated_at":rlu,
             "user":
                 {
-                "id":re_dic["user_id"],"name":requester["name"],"account":requester["username"],"email":requester["email"],
-                "phone":requester["phone"],"fb_id":requester["fb_id"],"status":requester["status"],"group":requester["group"],
+                "id":re_dic["user_id"],"name":requester["name"],"account":perform["username"],"email":perform["email"],
+                "phone":perform["phone"],"fb_id":requester["fb_id"],"status":requester["status"],"group":requester["group"],
                 "birthday":requester["birthday"],"height":requester["height"],"gender":requester["gender"],"verified":requester["verified"]
-                ,"privacy_policy":requester["privacy_policy"],"must_change_password":requester["must_change_password"],
-                "badge":requester["badge"],"created_at":requester["created_at"],"updated_at":requester["updated_at"]
+                ,"privacy_policy":requester["privacy_policy"],"must_change_password":requester['must_change_password'],
+                "badge":requester["badge"],"created_at":rcreated_at,"updated_at":rupdated_at
                 }
-            }
+            }]
+            print(all_dic)
             status="0"
-            return JsonResponse({"status":status,"request":all_dic},)
+            return JsonResponse({"status":status,"requests":all_dic})
         else:
             status = "1"
             return JsonResponse({"status":status})
@@ -524,6 +464,7 @@ def Friendrequest(request):
 def Friendsend(request):
     if request.method == 'POST':
         type = request.POST['type']
+        print(type)
         invite_codes = request.POST['invite_code']
         if invite_code.objects.filter(code=invite_codes).exists() is not True:
             status="1"
@@ -536,7 +477,7 @@ def Friendsend(request):
         else:
             uid=request.user.id
             whobesend=invite_code.objects.filter(code=invite_codes).values('user_id')
-            requestlist.objects.create(whoami=whobesend,user_id=uid,type=type)#who am i 是對18ａｐｉ而言
+            requestlist.objects.create(whoami=whobesend,user_id=uid,type=type,relation_id=whobesend)#who am i 是對18ａｐｉ而言
             status="0"
             return JsonResponse({"status":status})
     else:
@@ -547,30 +488,49 @@ def Friendsend(request):
 def Friendaccpet(request,inv_id):
     if request.method == 'GET':
         uid=request.user.id
-        if requestlist.objects.filter(user_id=inv_id,whoami=uid).exists():
+        inv_id=list(requestlist.objects.filter(id=inv_id).values("user_id"))[0]['user_id']
+        if requestlist.objects.filter(user_id=inv_id,whoami=uid,status=0).exists():
             b=list(invite_code.objects.filter(user_id=inv_id).values('user_name'))[0]['user_name']
-            print(b)
             relation_type=list(requestlist.objects.filter(user_id=inv_id,whoami=uid).values('type'))[0]['type']
-            name=list(People.objects.filter(username=b).values('name'))[0]['name']
+            name=list(UserSet.objects.filter(account=b).values('name'))[0]['name']
             email =list(People.objects.filter(username=b).values('email'))[0]['email']
             phone=list(People.objects.filter(username=b).values('phone'))[0]['phone']
-            fb_id=list(People.objects.filter(username=b).values('fb_id'))[0]['fb_id']
-            statu=list(People.objects.filter(username=b).values('status'))[0]['status']
-            group=list(People.objects.filter(username=b).values('group'))[0]['group']
-            birthday=list(People.objects.filter(username=b).values('birthday'))[0]['birthday']
-            height=list(People.objects.filter(username=b).values('height'))[0]['height']
-            gender=list(People.objects.filter(username=b).values('gender'))[0]['gender']
-            verified=list(People.objects.filter(username=b).values('verified'))[0]['verified']
-            privacy_policy=list(People.objects.filter(username=b).values('privacy_policy'))[0]['privacy_policy']
-            must_change_password=list(People.objects.filter(username=b).values('must_change_password'))[0]['must_change_password']
-            badge=list(People.objects.filter(username=b).values('badge'))[0]['badge']
-            #僅有account 和 relationtype是源自非people
-            friendlist.objects.create(name=name,account=b,email=email,phone=phone,fb_id=fb_id,status=statu,
+            fb_id=list(UserSet.objects.filter(account=b).values('fb_id'))[0]['fb_id']
+            statu=list(UserSet.objects.filter(account=b).values('status'))[0]['status']
+            group=list(UserSet.objects.filter(account=b).values('group'))[0]['group']
+            birthday=list(UserSet.objects.filter(account=b).values('birthday'))[0]['birthday']
+            height=list(UserSet.objects.filter(account=b).values('height'))[0]['height']
+            gender=list(UserSet.objects.filter(account=b).values('gender'))[0]['gender']
+            verified=list(UserSet.objects.filter(account=b).values('verified'))[0]['verified']
+            privacy_policy=list(UserSet.objects.filter(account=b).values('privacy_policy'))[0]['privacy_policy']
+            must_change_password=list(UserSet.objects.filter(account=b).values('must_change_password'))[0]['must_change_password']
+            badge=list(UserSet.objects.filter(account=b).values('badge'))[0]['badge']
+            friendlist.objects.create(user_id=uid,name=name,account=b,email=email,phone=phone,fb_id=fb_id,status=statu,
             group=group,birthday=birthday,height=height,gender=gender,verified=verified,privacy_policy=privacy_policy,
             must_change_password=must_change_password,badge=badge,relation_type=relation_type)
-            list_id=list(friendlist.objects.filter(account=b).values('id'))[0]['id']
             uid_id_friend.objects.create(my_id=uid,friend_id=inv_id,relation_type=relation_type)
-            requestlist.objects.filter(user_id=inv_id,whoami=uid).update(status=1,relation_id=list_id,read="true")
+
+            b=list(invite_code.objects.filter(user_id=uid).values('user_name'))[0]['user_name']
+            relation_type=list(requestlist.objects.filter(user_id=inv_id,whoami=uid).values('type'))[0]['type']
+            name=list(UserSet.objects.filter(account=b).values('name'))[0]['name']
+            email =list(People.objects.filter(username=b).values('email'))[0]['email']
+            phone=list(People.objects.filter(username=b).values('phone'))[0]['phone']
+            fb_id=list(UserSet.objects.filter(account=b).values('fb_id'))[0]['fb_id']
+            statu=list(UserSet.objects.filter(account=b).values('status'))[0]['status']
+            group=list(UserSet.objects.filter(account=b).values('group'))[0]['group']
+            birthday=list(UserSet.objects.filter(account=b).values('birthday'))[0]['birthday']
+            height=list(UserSet.objects.filter(account=b).values('height'))[0]['height']
+            gender=list(UserSet.objects.filter(account=b).values('gender'))[0]['gender']
+            verified=list(UserSet.objects.filter(account=b).values('verified'))[0]['verified']
+            privacy_policy=list(UserSet.objects.filter(account=b).values('privacy_policy'))[0]['privacy_policy']
+            must_change_password=list(UserSet.objects.filter(account=b).values('must_change_password'))[0]['must_change_password']
+            badge=list(UserSet.objects.filter(account=b).values('badge'))[0]['badge']
+            friendlist.objects.create(user_id=inv_id,name=name,account=b,email=email,phone=phone,fb_id=fb_id,status=statu,
+            group=group,birthday=birthday,height=height,gender=gender,verified=verified,privacy_policy=privacy_policy,
+            must_change_password=must_change_password,badge=badge,relation_type=relation_type)
+
+            uid_id_friend.objects.create(my_id=inv_id,friend_id=uid,relation_type=relation_type)
+            requestlist.objects.filter(user_id=inv_id,whoami=uid).update(status=1,read="true")
             status="0"
         else:
             status="1"
@@ -584,8 +544,9 @@ def Friendrefuse(request,inv_id):
     if request.method == 'GET':
         uid=request.user.id
         status = "1"
-        if requestlist.objects.filter(user_id=inv_id,whoami=uid).exists():
-            requestlist.objects.filter(user_id=inv_id,whoami=uid).update(status=2,read="true")
+        if requestlist.objects.filter(id=inv_id,whoami=uid,status=0).exists():
+            print('GG')
+            # requestlist.objects.filter(id=inv_id,whoami=uid).update(status=2,read="true")
             status = "0"
         return JsonResponse({"status":status})
     else:
@@ -595,6 +556,7 @@ def Friendrefuse(request,inv_id):
 @csrf_exempt#二十二個ＡＰＩ 刪除邀請 有問題 有關刪除範圍
 def Invite_remove(request,uid):
     if request.method == 'GET':
+        print("jjj")
         user_id=request.user.id
         if uid == user_id and requestlist.objects.filter(user_id=uid).exists():
             requestlist.objects.filter(user_id=uid).delete()
@@ -608,11 +570,15 @@ def Invite_remove(request,uid):
 def Share(request):
     if request.method == 'POST':
         uid=request.user.id
-        type = request.POST['type']
+        type = request.POST['type']#打星號1
         id = request.POST['id']
+        id=str(int(id)+1)
         relation_type = request.POST['relation_type']
+        t=time.time()
+        turn_t = time.localtime(t) # 轉成時間元組
+        dat_time = time.strftime("%Y-%m-%d %H:%M:%S", turn_t)
         if int(type) in range(4):
-            record.objects.create(user_id=uid,report_id=id,type=type,relation_type=relation_type)
+            record.objects.create(user_id=uid,report_id=id,type=type,relation_type=relation_type,created_at=dat_time)
             status="0"
             return JsonResponse({"status":status})
         else:
@@ -626,9 +592,13 @@ def Share(request):
 @csrf_exempt#第二十四ＡＰＩ 查看分享成果
 def Share0(request,kind):
     if request.method == 'GET' :
-        all_list=api24(request,kind)
-        status = "0"
-        return JsonResponse({"status":status,"records":all_list})
+        if record.objects.filter(relation_type=kind):
+            all_list=api24(kind)
+            status = "0"
+            return JsonResponse({"status":status,"records":all_list})
+        else :
+            status = "1"
+            return JsonResponse({"status":status})
     else:
         status = "1"
         return JsonResponse({"status":status})
@@ -683,24 +653,28 @@ def Last_load(request):
 @csrf_exempt#第二十六個ＡＰＩ 控糖團成果結算
 def Results(request):
     if request.method == 'GET':
-        alldic=list(requestlist.objects.values())
-        al=list(requestlist.objects.values('id'))
-        b=[]
-        dic_i=0
-        for i in range(len(alldic)):
-            b.append(al[i]['id'])
-            b=sorted(b)
-        id_m=b[-1]+1    
-        for i in range(id_m):
-            if requestlist.objects.filter(id=i).exists():
-                print(i)
-                del alldic[dic_i]['whoami']
-                friend_id=list(requestlist.objects.filter(id=i).values("relation_id"))[0]['relation_id']
-                friend_dic=list(friendlist.objects.filter(id=friend_id).values())[0]
-                alldic[dic_i]["relation"]=friend_dic
-                dic_i+=1
-        status="0"
-        return JsonResponse({"status":status,"relation":alldic})
+        uid=request.user.id
+        if friendlist.objects.filter(user_id=uid).exists():
+            alldic=list(requestlist.objects.values())
+            al=list(requestlist.objects.values('id'))
+            b=[]
+            dic_i=0
+            for i in range(len(alldic)):
+                b.append(al[i]['id'])
+                b=sorted(b)
+            id_m=b[-1]+1    
+            for i in range(id_m):
+                if requestlist.objects.filter(id=i).exists():
+                    del alldic[dic_i]['whoami']
+                    friend_id=list(requestlist.objects.filter(id=i).values("relation_id"))[0]['relation_id']
+                    friend_dic=list(friendlist.objects.filter(id=friend_id).values())[0]
+                    alldic[dic_i]["relation"]=friend_dic
+                    dic_i+=1
+            status="0"
+            return JsonResponse({"status":status,"relation":alldic})
+        else:
+            status="0"
+            return JsonResponse({"status":status})
     else:
         status = "1"
         return JsonResponse({"status":status})
@@ -764,20 +738,23 @@ def A1c(request):
         uid=request.user.id
         a1c = request.POST['a1c']
         recorded_at = request.POST['recorded_at']
-        alc.objects.create(user_id=uid,a1c=a1c,recorded_at=recorded_at)
-        status="0"
+        alc.objects.create(user_id=uid,a1c=str(a1c),recorded_at=recorded_at)
+        status = "0"
         return JsonResponse({"status":status})
     elif request.method == 'GET':
-        alcd=alc.objects.values()
-        readalc=list(alcd)
+        uid=request.user.id
+        a=list(alc.objects.filter(user_id=uid).values())
         status = "0"
-        return JsonResponse({"status":status,'alcs':readalc})
+        return JsonResponse({"status":status,'a1cs':a})
     elif request.method == 'DELETE':
-        d=same_key(request.body)
-        c=list(d['ids'])
-        for i in range(199):
-            if str(i) in c:
-                alc.objects.filter(id=str(i)).delete()
+        # d=same_key(request.body)
+        # c=list(d['ids'])
+        # for i in range(199):
+        #     if str(i) in c:
+        #         alc.objects.filter(id=str(i)).delete()
+        uid=request.user.id
+        if alc.objects.filter(user_id=uid):
+            alc.objects.filter(user_id=uid).delete()
         status="0"
         return JsonResponse({"status":status})
     else:
@@ -790,13 +767,13 @@ def Setting(request):
         uid=request.user.id
         d=GetRequestBody(request.body)
         dkey=list(d)
-        if 'after_recording' in dkey:setting.objects.filter(user_id=uid).update(after_recording=d['after_recording'])
-        if 'no_recording_for_a_day' in dkey:setting.objects.filter(user_id=uid).update(no_recording_for_a_day=d['no_recording_for_a_day'])
-        if 'over_max_or_under_min' in dkey:setting.objects.filter(user_id=uid).update(over_max_or_under_min=d['over_max_or_under_min'])
-        if 'after_meal' in dkey:setting.objects.filter(user_id=uid).update(after_meal=d['after_meal'])
-        if 'unit_of_sugar' in dkey:setting.objects.filter(user_id=uid).update(unit_of_sugar=d['unit_of_sugar'])
-        if 'unit_of_weight' in dkey:setting.objects.filter(user_id=uid).update(unit_of_weight=d['unit_of_weight'])
-        if 'unit_of_height' in dkey:setting.objects.filter(user_id=uid).update(unit_of_height=d['unit_of_height'])
+        if 'after_recording' in dkey:UserSet.objects.filter(user_id=uid).update(after_recording=d['after_recording'])
+        if 'no_recording_for_a_day' in dkey:UserSet.objects.filter(user_id=uid).update(no_recording_for_a_day=d['no_recording_for_a_day'])
+        if 'over_max_or_under_min' in dkey:UserSet.objects.filter(user_id=uid).update(over_max_or_under_min=d['over_max_or_under_min'])
+        if 'after_meal' in dkey:UserSet.objects.filter(user_id=uid).update(after_meal=d['after_meal'])
+        if 'unit_of_sugar' in dkey:UserSet.objects.filter(user_id=uid).update(unit_of_sugar=d['unit_of_sugar'])
+        if 'unit_of_weight' in dkey:UserSet.objects.filter(user_id=uid).update(unit_of_weight=d['unit_of_weight'])
+        if 'unit_of_height' in dkey:UserSet.objects.filter(user_id=uid).update(unit_of_height=d['unit_of_height'])
         status="0"
         return JsonResponse({"status":status})
     else:
@@ -821,11 +798,9 @@ def Notification(request):
 @csrf_exempt#第37個ＡＰＩ 刪除更多好友 
 def Remove(request):
     if request.method == 'DELETE':
-        d=same_key(request)
-        ids=list(d["ids"])
-        for i in range(199):
-            if str(i) in ids:
-                friendlist.objects.filter(id=str(i)).delete()
+        uid=request.user.id
+        print(uid)
+        friendlist.objects.filter(user_id=uid).delete()
         status="0"
         return JsonResponse({"status":status})
     else:
@@ -835,13 +810,14 @@ def Remove(request):
 @csrf_exempt#第38個ＡＰＩ
 def Regcheck(request):
     if request.method == 'GET':
-        d=GetRequestBody(request.body)
-        account=d['account']
+        account = request.GET.get('account')
+        # d=GetRequestBody(request.body)
+        # account=d['account']
         if People.objects.filter(username=account).exists():
-            status = "0"
+            status = "1"
             return JsonResponse({"status":status})
         else:
-            status = "1"
+            status = "0"
             return JsonResponse({"status":status})
     else:
         status = "1"
@@ -850,9 +826,16 @@ def Regcheck(request):
 @csrf_exempt#第39個ＡＰＩ
 def Badge(request):
     if request.method == 'PUT':
-        d=GetRequestBody(request.body)
-        badge=d['badge']
-        People.objects.update(badge=badge)
+        # d=GetRequestBody(request.body)
+        a=request.body
+        ur=urllib.parse.unquote(str(a, encoding='utf-8'))
+        a = re.split("=|&",ur)
+        udata={}
+        for i in range(0,int(len(a)),2):
+            b=i+1    
+            udata[a[i]]=a[b]
+        badge=udata['badge']
+        UserSet.objects.update(badge=badge)
         status = "0"
         return JsonResponse({"status":status})
     else:
@@ -862,26 +845,31 @@ def Badge(request):
 @csrf_exempt#第40 44個ＡＰＩ  未完
 def Dietrecord(request):
     if request.method == 'DELETE':
-        d=GetRequestBody(request.body)
-        bs_id=d['blood_sugars']
-        bp_id=d['blood_pressures']
-        w_id=d['weights']
-        for i in range(200):
-            if str(i) in bs_id:
-                bloodsugar.objects.filter(id=bs_id).delete()
-            if str(i) in bp_id:
-                bloodduck.objects.filter(id=bp_id).delete()
-            if str(i) in w_id:
-                weight.objects.filter(id=w_id).delete()
+        uid=request.user.id
+        # d=GetRequestBody(request.body)
+        # bs_id=d['blood_sugars']
+        # bp_id=d['blood_pressures']
+        # w_id=d['weights']
+        if bloodsugar.objects.filter(id=uid):
+            bloodsugar.objects.filter(id=uid).delete()
+        if  bloodduck.objects.filter(id=uid):
+            bloodduck.objects.filter(id=uid).delete()
+        if weight.objects.filter(id=uid):
+            weight.objects.filter(id=uid).delete()
         status = "0"
         return JsonResponse({"status":status})
     elif request.method == 'POST':
         # uid=2
         uid=request.user.id
-        listbs=list(bloodsugar.objects.filter(user_id=uid).values())[0]
-        listbd=list(bloodduck.objects.filter(user_id=uid).values())[0]
-        listw=list(weight.objects.filter(user_id=uid).values())[0]
-        print(listbd)
+        listbs=[]
+        listbd=[]
+        listw=[]
+        if bloodsugar.objects.filter(user_id=uid):
+            listbs=list(bloodsugar.objects.filter(user_id=uid).values())[0]
+        if bloodduck.objects.filter(user_id=uid):
+            listbd=list(bloodduck.objects.filter(user_id=uid).values())[0]
+        if weight.objects.filter(user_id=uid):
+            listw=list(weight.objects.filter(user_id=uid).values())[0]
         status = "0"
         return JsonResponse({"status":status,"blood_sugars":listbs,"blood_pressures":listbd,"weights":listw})
     else:
@@ -904,14 +892,189 @@ def Drug(request):
         status = "0"
         return JsonResponse({"status":status,'drug_useds':readdrug})
     elif request.method == 'DELETE':
-        d=same_key(request.body)
-        c=list(d['ids'])
-        for i in range(199):
-            if str(i) in c:
-                drug_useds.objects.filter(id=str(i)).delete()
+        # d=same_key(request.body)
+        # c=list(d['ids'])
+        # for i in range(199):
+        #     if str(i) in c:
+        #         drug_useds.objects.filter(id=str(i)).delete()
+        uid=request.user.id
+        if drug_useds.objects.filter(user_id=uid):
+            print("2")
+            drug_useds.objects.filter(user_id=uid).delete()
+            print('1')        
         status="0"
         return JsonResponse({"status":status})
     else:
         status = "1"
         return JsonResponse({"status":status})
+
+
+def same_key(body_data):#抓patch和重複欄位用
+    b=[]
+    c=[]
+    d={}
+    data = body_data.decode('utf-8')
+    data2 = data.split('\r\n\r\n')
+    for i in data2:
+        a=i.split('\r\n')
+        for i in a:
+            b=i.split('=')
+            c=c+b
+            for i in range(len(c)):
+                if i%4 == 3:
+                    if c[i-1].replace('"','') in d and  c[i] not in d[c[i-1].replace('"','')]:
+                        a=d[c[i-1].replace('"','')]
+                        d[c[i-1].replace('"','')]=a,c[i]
+                        
+                    else:
+                        d.update({c[i-1].replace('"',''):c[i]})
+                        
+    return d   
+
+def real_pass(request,password):#抓密碼用
+    a=request.COOKIES['sessionid']
+    s=Session.objects.filter(session_key=a)[0]
+    b=s.get_decoded()
+    if password == b['real_password']: 
+        secret_password = b['secret_password']
+    return secret_password
+
+def GetRequestBody(body_data):#patch專用函數
+#body_data = request.body
+    b=[]
+    c=[]
+    d={}
+    data = body_data.decode('utf-8')
+    data2 = data.split('\r\n\r\n')
+    for i in data2:
+        a=i.split('\r\n')
+        for i in a:
+            b=i.split('=')
+            c=c+b
+            for i in range(len(c)):
+                if i%4 == 3:
+                    d.update({c[i-1].replace('"',''):c[i]})
+    return d   
+
+def the24api_dic(uid_to_who,whatdata):#24api的字典   #放入分享的id和uid,內容,分類
+        #需求 報告內容＋報告者資料＋分享時間＋type 
+        userset=list(UserSet.objects.filter(user_id=uid_to_who).values())[0]#分享者基本資料
+        requester=list(People.objects.filter(username=userset["account"]).values())[0]
+        userDic={ #報告者資料字典
+            "id":userset["user_id"],"name":userset["name"],"account":userset["account"],
+            "email":requester["email"],"phone":requester["phone"],
+            "fb_id":userset["fb_id"],"status":userset["status"],"userset":userset["group"],
+            "birthday":userset["birthday"],"height":userset["height"],"gender":userset["gender"],
+            "verified":userset["verified"]
+            ,"privacy_policy":userset["privacy_policy"],"must_change_password":userset["must_change_password"],
+            "badge":userset["badge"],"created_at":userset["created_at"],"updated_at":userset["updated_at"]
+            }
+        whatdata["user"]=userDic
+        return whatdata
+
+def api24(kind):#retype是醫師的
+        i=list(record.objects.filter(relation_type=kind).values_list('report_id', flat=True))
+        j=list(record.objects.filter(relation_type=kind).values_list('type', flat=True))
+        k=list(record.objects.filter(relation_type=kind).values_list('created_at', flat=True))
+        data_zip=list(zip(i,j,k))
+        finish=[]
+        for i,j,k in data_zip:
+            if j == '0':
+                whatdata=list(bloodduck.objects.filter(id=i).values())[0]
+                uid_to_who=list(bloodduck.objects.filter(id=i).values())[0]['user_id']
+                almostfin=the24api_dic(uid_to_who,whatdata)
+                t=time.time()
+                turn_t = time.localtime(t) # 轉成時間元組
+                dat_time = time.strftime("%Y-%m-%d %H:%M:%S", turn_t)
+                almostfin["created_at"]=dat_time
+                almostfin['type']=j
+                finish.append(almostfin)
+            elif j == '1':
+                whatdata=list(weight.objects.filter(id=i).values())[0]
+                uid_to_who=list(weight.objects.filter(id=i).values())[0]['user_id']
+                almostfin=the24api_dic(uid_to_who,whatdata)
+                t=time.time()
+                turn_t = time.localtime(t) # 轉成時間元組
+                dat_time = time.strftime("%Y-%m-%d %H:%M:%S", turn_t)
+                almostfin["created_at"]=dat_time
+                almostfin['type']=j
+                finish.append(almostfin)
+            elif j == '2':
+                whatdata=list(bloodsugar.objects.filter(id=i).values())[0]
+                uid_to_who=list(bloodsugar.objects.filter(id=i).values())[0]['user_id']
+                print(uid_to_who)
+                almostfin=the24api_dic(uid_to_who,whatdata)
+                t=time.time()
+                turn_t = time.localtime(t) # 轉成時間元組
+                dat_time = time.strftime("%Y-%m-%d %H:%M:%S", turn_t)
+                almostfin["created_at"]=dat_time
+                almostfin['type']=j
+                finish.append(almostfin)
+            elif j == '3':
+                whatdata=list(diet.objects.filter(id=i).values())[0]
+                uid_to_who=list(diet.objects.filter(id=i).values())[0]['user_id']
+                almostfin=the24api_dic(uid_to_who,whatdata)
+                t=time.time()
+                turn_t = time.localtime(t) # 轉成時間元組
+                dat_time = time.strftime("%Y-%m-%d %H:%M:%S", turn_t)
+                almostfin["created_at"]=dat_time
+                almostfin['type']=j
+                finish.append(almostfin)
+        # request_dic={'bloodduck':'0','weight':'1','bloodsugar':'2','diet':'3'}
+        # req_list=request_dic.keys()
+        # for i in req_list:#i=是哪個項目？
+        #     if i == 'bloodduck' and record.objects.filter(relation_type=kind,type="0").exists():
+        #         for t in range(50):#t是檢測id
+        #             if record.objects.filter(id=str(t),relation_type=kind,type="0"):#id是所有報告的id串列
+        #                 if bloodduck.objects.filter(id=id).values().exists():
+        #                     uid=list(bloodduck.objects.filter(id=id).values('user_id'))[0]["user_id"]#報告者uid抓名字
+        #                     sharedata=list(bloodduck.objects.filter(id=id).values())[0]#報告者內容
+        #                     all_list.append(the24api_dic(t,uid,sharedata,i))#丟進去裡面將字典連接起來
+        #     elif i == 'weight' and record.objects.filter(relation_type=kind,type="1").exists():
+        #         id=list(record.objects.filter(relation_type=kind,type="1").values('report_id'))[0]['report_id']#1 2 3
+        #         for t in range(50):#t是檢測id
+        #             if str(t) in id:#id是所有報告的id串列
+        #                 if weight.objects.filter(id=id).values().exists():
+        #                     uid=list(weight.objects.filter(id=id).values('user_id'))[0]["user_id"]#報告者uid抓名字
+        #                     sharedata=list(weight.objects.filter(id=id).values())[0]#報告者內容
+        #                     all_list.append(the24api_dic(t,uid,sharedata,i))#丟進去裡面將字典連接起來
+        #     elif i == 'bloodsugar'and record.objects.filter(relation_type=kind,type="2").exists():
+        #         id=list(record.objects.filter(relation_type=kind,type="2").values('report_id'))[0]['report_id']#1 2 3
+        #         for t in range(50):#t是檢測id
+        #             if str(t) in id:#id是所有報告的id串列
+        #                 if bloodsugar.objects.filter(id=id).values().exists():
+        #                     uid=list(bloodsugar.objects.filter(id=id).values('user_id'))[0]["user_id"]#報告者uid抓名字
+        #                     sharedata=list(bloodsugar.objects.filter(id=id).values())[0]#報告者內容
+        #                     all_list.append(the24api_dic(t,uid,sharedata,i))#丟進去裡面將字典連接起來
+        #     elif i == 'diet'and record.objects.filter(relation_type=kind,type="3").exists():
+        #         id=list(record.objects.filter(relation_type=kind,type="3").values('report_id'))[0]['report_id']#1 2 3
+        #         for t in range(50):#t是檢測id
+        #             if str(t) in id:#id是所有報告的id串列
+        #                 if diet.objects.filter(id=id).values().exists():
+        #                     uid=list(diet.objects.filter(id=id).values('user_id'))[0]["user_id"]#報告者uid抓名字
+        #                     sharedata=list(diet.objects.filter(id=id).values())[0]#報告者內容
+        #                     all_list.append(the24api_dic(t,uid,sharedata,i))#丟進去裡面將字典連接起來
+            print(finish)
+            return finish
+    
+@csrf_exempt #抓時間問題
+def time_cut(time):        #登出 #OK
+    a=str(time)#1
+    b=a.split(".")
+    c=time.strptime(b[0], "%Y-%m-%d %H:%M:%S")
+    print(c)
+    b=c.strftime("%Y-%m-%d %H:%M:%S")
+    return b
+
+
+
+@csrf_exempt #登出
+def logout_request(request):        #登出 #OK
+    try:
+        auth.logout(request)
+        message = {"status":"0"}
+        return HttpResponse.HttpResponseRedirect('api/login')
+    except:
+        message = {"status":"1"}
+        return JsonResponse(message)
 
